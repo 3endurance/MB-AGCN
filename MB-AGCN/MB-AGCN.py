@@ -67,41 +67,6 @@ class Recommender:
 		# return Activate(a, self.actFunc)
 		return Activate(tf.sparse_tensor_dense_matmul(adj, lats), self.actFunc)
 
-	def metaForSpecialize(self, uEmbed, iEmbed, behEmbed, adjs, tpAdjs):
-		latdim = args.latdim // 2
-		rank = args.rank
-		assert len(adjs) == len(tpAdjs)
-		uNeighbor = iNeighbor = 0
-		for i in range(len(adjs)):
-			# uNeighbor += tf.sparse.sparse_dense_matmul(adjs[i], iEmbed)
-			# score1 = np.dot(uEmbed,iEmbed)
-			uNeighbor += tf.sparse_tensor_dense_matmul(adjs[i], iEmbed)
-			uNeighbor += uEmbed
-			# iNeighbor += tf.sparse.sparse_dense_matmul(tpAdjs[i], uEmbed)
-			# score2 = np.dot(iEmbed,uEmbed)
-			iNeighbor += tf.sparse_tensor_dense_matmul(tpAdjs[i], uEmbed)
-			iNeighbor += iEmbed
-		# uNeighbor += uEmbed
-		# iNeighbor += iEmbed
-		ubehEmbed = tf.expand_dims(behEmbed, axis=0) * tf.ones_like(uEmbed)
-
-		ibehEmbed = tf.expand_dims(behEmbed, axis=0) * tf.ones_like(iEmbed)
-		# useri = tf.expand_dims(iEmbed, axis=0) * tf.ones_like(uEmbed)
-		score1 = np.dot(uEmbed,uNeighbor)
-		score2 = np.dot(iEmbed,iNeighbor)
-		# score3 = np.dot(ubehEmbed,uNeighbor)
-		# score4 = np.dot(ibehEmbed,iNeighbor)
-
-		uMetaLat = FC(tf.concat([score1*ubehEmbed, uEmbed, uNeighbor], axis=-1), latdim, useBias=True, activation=self.actFunc, reg=True, name='specMeta_FC1', reuse=True)
-		iMetaLat = FC(tf.concat([score2*ibehEmbed, iEmbed, iNeighbor], axis=-1), latdim, useBias=True, activation=self.actFunc, reg=True, name='specMeta_FC1', reuse=True)
-		uW1 = tf.reshape(FC(uMetaLat, rank * latdim, useBias=True, reg=True, biasInitializer='xavier', biasReg=True, name='specMeta_FC2', reuse=True), [-1, latdim, rank])
-		uW2 = tf.reshape(FC(uMetaLat, rank * latdim, useBias=True, reg=True, biasInitializer='xavier', biasReg=True, name='specMeta_FC3', reuse=True), [-1, rank, latdim])
-		iW1 = tf.reshape(FC(iMetaLat, rank * latdim, useBias=True, reg=True, biasInitializer='xavier', biasReg=True, name='specMeta_FC4', reuse=True), [-1, latdim, rank])
-		iW2 = tf.reshape(FC(iMetaLat, rank * latdim, useBias=True, reg=True, biasInitializer='xavier', biasReg=True, name='specMeta_FC5', reuse=True), [-1, rank, latdim])
-
-		params = {'uW1': uW1, 'uW2': uW2, 'iW1': iW1, 'iW2': iW2}
-		return params
-
 	def specialize(self, uEmbed, iEmbed, params):
 		retUEmbed = tf.reduce_sum(tf.expand_dims(uEmbed, axis=-1) * params['uW1'], axis=1)
 		retUEmbed = tf.reduce_sum(tf.expand_dims(retUEmbed, axis=-1) * params['uW2'], axis=1)
@@ -162,23 +127,6 @@ class Recommender:
 		self.ulat[-1] = tf.add_n(ulats)
 		self.ilat[-1] = tf.add_n(ilats)
 
-		# 元预测
-	def metaForPredict(self, src_ulat, src_ilat, tgt_ulat, tgt_ilat):
-		latdim = args.latdim
-		src_ui = FC(tf.concat([src_ulat * src_ilat, src_ulat+tgt_ulat, src_ilat+tgt_ilat], axis=-1), latdim, reg=True, useBias=True, activation=self.actFunc, name='predMeta_FC1', reuse=True)
-		tgt_ui = FC(tf.concat([tgt_ulat * tgt_ilat, tgt_ulat, tgt_ilat], axis=-1), latdim, reg=True, useBias=True, activation=self.actFunc, name='predMeta_FC1', reuse=True)
-		score = np.dot(src_ui,tgt_ui)
-		metalat = FC(tf.concat([(src_ui * tgt_ui)*score , src_ui, tgt_ui], axis=-1), latdim * 3, reg=True, useBias=True, activation=self.actFunc, name='predMeta_FC2', reuse=True)
-		w1 = tf.reshape(FC(metalat, latdim * 3 * latdim, reg=True, useBias=True, name='predMeta_FC3', reuse=True, biasReg=True, biasInitializer='xavier'), [-1, latdim * 3, latdim])
-		b1 = tf.reshape(FC(metalat, latdim, reg=True, useBias=True, name='predMeta_FC4', reuse=True), [-1, 1, latdim])
-		w2 = tf.reshape(FC(metalat, latdim, reg=True, useBias=True, name='predMeta_FC5', reuse=True, biasReg=True,biasInitializer='xavier'), [-1, latdim, 1])
-
-		params = {
-			'w1': w1,
-			'b1': b1,
-			'w2': w2
-		}
-		return params
 
 	def _predict(self, ulat, ilat, params):
 		# predEmbed = tf.expand_dims(tf.concat([ulat * ilat, ulat, ilat], axis=-1), axis=1)
